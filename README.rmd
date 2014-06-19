@@ -1,0 +1,83 @@
+Weight Lifting Exercises Prediction
+========================================================
+
+## Purpose
+
+This document describes the analisys I made when solving the Practical Machine Learning course project.
+
+The purpose of the assignment is to predict how well a weight lifting exercise is performed from a known set of common mistakes. As predictors, I use the raw data provided by four sensors. For more information about the data set please see http://groupware.les.inf.puc-rio.br/har. The variable to predict is the *classe* variable of the data set. Its values range from "A" to "E". "A" is the correct way to do the exercise while "B", "C", "D" and "E" represent common mistakes made by athletes.
+
+### Assumptions
+Having no more information about the dataset, and to simplify the analysis, I assume that:
+* The athletes do not get too tired after some repetitions. That means the last points collected from a given exercise have the same weight in terms of usefull information as the first points.
+* With the exception of the trainer, each athlete is not influenced by the way other athletes make each exercise.
+
+## Feature extraction and selection
+
+By plotting most of the features, I reached to the following conclusions about the training set:
+* Individuals perform each exercise a bit differently, so it will be dificult to predict for a new individual.
+* The derived features such as mean, variance, standard deviation, max, min, amplitude, kurtosis and skewness did not seem to add much information about each classe and it reduced the amount of information available for training. It compresses the data but, due to the fact the we only have six young men performing the exercise, I believe using as much data as possible to perform the training yields a better predictor.
+* The "E" classe mistake will be easier to distinguish from the other mistakes.
+* The "B" and "A" classes wll be hard to tell apart.
+
+In light of these conclusions, I removed all the derived features except for the roll, pitch and yaw.
+
+```{r}
+source('./helpers.R')
+trainingData <- stripDerivedColumns(read.csv("pml-training.csv"))
+colnames(trainingData)
+```
+
+
+## Cross-Validation
+
+Given the nature of the assignment, I used a random forest with 501 trees to predict the *classe* variable.
+
+I used a random forest in 80% of the training data to understand the most important features:
+
+```{r}
+library(caret)
+set.seed(2343)
+inTrain <- createDataPartition(trainingData$classe, p=0.8, list=F)
+training <- trainingData[inTrain, ]
+library(randomForest)
+rfFit <- randomForest(classe ~ ., 
+                    data=training, 
+                    na.action=na.fail,
+                    ntree = 501, #avoid random tie breaking
+                    importance=T)
+importance(rfFit)[order(importance(rfFit)[, 6]), ]
+```
+
+I used 10-fold cross validation to decide whether to take out the features *pitch_dumbbell*, *accel_belt_y*, *total_accel_belt*, *magnet_arm_x*, *magnet_arm_y* or not:
+
+
+```{r}
+set.seed(2343)
+confMFoldList <- performFoldCrossValidation(trainingData, 10)
+summary(compareAccuracies(confMFoldList))
+```
+
+As you can see, I can fit a random forest without those features and don't loose much accuracy. On the other hand, the random forest fit will be less sensitive to changes in the training set. Also, the expected out-of-sample error is very low.
+
+## Validation
+
+The final forest fit parameters are shown bellow:
+```{r}
+set.seed(2343)
+trainingData <- stripLowImportanceColumns(trainingData)
+rfFit <- randomForest(classe ~ ., 
+                       data=trainingData, 
+                       na.action=na.fail,
+                       ntree = 501)
+print(rfFit)
+```
+
+And its evaluation on the testing data:
+```{r}
+testingData <- read.csv("pml-testing.csv")
+testingPrediction <- predict(rfFit, testingData)
+testingPrediction
+```
+
+
